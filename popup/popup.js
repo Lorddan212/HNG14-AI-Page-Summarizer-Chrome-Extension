@@ -461,7 +461,7 @@
     }
 
     if (/Failed to fetch|NetworkError|ERR_FAILED/i.test(message)) {
-      return "The AI proxy could not be reached. Run `node proxy/mock-server.js`, keep that terminal open, and confirm the popup endpoint is http://localhost:8787/api/summarize.";
+      return "The AI proxy could not be reached. Start one proxy with `npm run start:gemini-proxy`, `npm run start:openai-proxy`, or `npm run start:proxy`, then confirm http://localhost:8787/health opens.";
     }
 
     return message || "Something went wrong while summarizing the page.";

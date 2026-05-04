@@ -5,6 +5,8 @@
   "description": "Manifest V3 Chrome Extension for summarizing article pages through a secure AI proxy.",
   "scripts": {
     "start:proxy": "node proxy/mock-server.js",
-    "check": "node --check background/service-worker.js && node --check content/content-script.js && node --check popup/popup.js && node --check proxy/mock-server.js && node --check utils/constants.js && node --check utils/extractor.js && node --check utils/sanitizer.js && node --check utils/storage.js"
+    "start:openai-proxy": "node proxy/openai-server.js",
+    "start:gemini-proxy": "node proxy/gemini-server.js",
+    "check": "node --check background/service-worker.js && node --check content/content-script.js && node --check popup/popup.js && node --check proxy/mock-server.js && node --check proxy/openai-server.js && node --check proxy/gemini-server.js && node --check utils/constants.js && node --check utils/extractor.js && node --check utils/sanitizer.js && node --check utils/storage.js"
   }
 }
