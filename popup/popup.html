@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI Page Summarizer</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="popup-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">AI</div>
+          <div>
+            <h1>Page Summarizer</h1>
+            <p id="statusLine" class="status-line" aria-live="polite">Ready</p>
+          </div>
+        </div>
+        <button id="themeToggle" class="ghost-button compact" type="button" aria-pressed="false">
+          Dark
+        </button>
+      </header>
+
+      <section class="page-panel" aria-labelledby="pageTitleLabel">
+        <p id="pageTitleLabel" class="section-label">Current page</p>
+        <h2 id="pageTitle" class="page-title">Loading page...</h2>
+        <p id="pageUrl" class="page-url"></p>
+      </section>
+
+      <section class="control-panel" aria-label="Summary controls">
+        <fieldset class="mode-switch">
+          <legend class="sr-only">Summary length</legend>
+          <label>
+            <input type="radio" name="summaryMode" value="standard" checked>
+            <span>Detailed</span>
+          </label>
+          <label>
+            <input type="radio" name="summaryMode" value="brief">
+            <span>3 bullets</span>
+          </label>
+        </fieldset>
+
+        <button id="summarizeBtn" class="primary-button" type="button">
+          Summarize Page
+        </button>
+      </section>
+
+      <details class="settings-panel">
+        <summary>API settings</summary>
+        <label class="field-label" for="endpointInput">Proxy endpoint</label>
+        <input id="endpointInput" class="text-input" type="url" spellcheck="false" autocomplete="off">
+        <button id="saveEndpointBtn" class="ghost-button full-width" type="button">Save endpoint</button>
+      </details>
+
+      <div id="alertBox" class="alert" role="alert" hidden></div>
+
+      <div id="loadingBox" class="loading-box" aria-live="polite" hidden>
+        <span class="spinner" aria-hidden="true"></span>
+        <span>Summarizing...</span>
+      </div>
+
+      <section id="resultsPanel" class="results-panel" aria-label="Summary result" hidden>
+        <div class="meta-grid">
+          <div>
+            <span class="meta-label">Reading time</span>
+            <strong id="readingTime">-</strong>
+          </div>
+          <div>
+            <span class="meta-label">Word count</span>
+            <strong id="wordCount">-</strong>
+          </div>
+        </div>
+
+        <section class="result-card" aria-labelledby="summaryHeading">
+          <h3 id="summaryHeading">Summary</h3>
+          <ul id="summaryList" class="result-list"></ul>
+        </section>
+
+        <section class="result-card" aria-labelledby="insightsHeading">
+          <h3 id="insightsHeading">Key insights</h3>
+          <ul id="insightsList" class="result-list insight-list"></ul>
+        </section>
+
+        <div class="action-grid">
+          <button id="copyBtn" class="ghost-button" type="button">Copy</button>
+          <button id="highlightBtn" class="ghost-button" type="button">Highlight Key Points</button>
+          <button id="clearHighlightsBtn" class="ghost-button" type="button">Clear Highlights</button>
+          <button id="clearBtn" class="danger-button" type="button">Clear Page Cache</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="../utils/constants.js"></script>
+    <script src="../utils/sanitizer.js"></script>
+    <script src="../utils/storage.js"></script>
+    <script src="popup.js" defer></script>
+  </body>
+</html>
