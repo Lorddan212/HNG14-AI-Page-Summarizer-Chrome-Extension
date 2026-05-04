@@ -1,27 +1,32 @@
 # AI Page Summarizer Chrome Extension
 
-A real Manifest V3 Chrome Extension that extracts meaningful content from the active webpage, sends it to a configurable AI proxy, displays a structured summary in the popup, caches summaries per URL, and can highlight matching key points on the page.
+A Manifest V3 Chrome Extension that extracts meaningful content from the active webpage, sends it to a secure AI proxy, displays a structured summary in the popup, caches summaries per URL, and can highlight important sections on the page.
 
-This project is intended for local learning and testing. Do not upload it to the Chrome Web Store as-is.
+This is a local/unpacked extension project. Do not upload it to the Chrome Web Store as-is.
 
-## Features
+## Requirement Coverage
 
-- Manifest V3 service worker architecture
-- Minimal permissions: `activeTab`, `scripting`, and `storage`
-- Programmatic content-script injection only after user action
-- Heuristic article extraction that avoids navigation, ads, footers, forms, sidebars, cookie banners, and low-value page chrome
-- Configurable AI proxy endpoint, defaulting to `http://localhost:8787/api/summarize`
-- Structured summary rendering with summary bullets, key insights, estimated reading time, and word count
-- Cache per URL and summary mode using `chrome.storage.local`
-- Copy summary, clear page cache, dark/light mode, and 3-bullet mode
-- Optional safe highlighting that wraps matched text nodes with `<mark>` elements without using unsafe HTML injection
-- Friendly errors for restricted pages, empty pages, failed messaging, invalid API responses, timeouts, and network failures
+- Manifest V3 only
+- Background service worker for AI requests
+- Popup UI with page title, loading state, summary output, copy, reset, dark/light mode, and 3-bullet mode
+- Content script with article-focused extraction heuristics
+- `chrome.storage.local` caching per URL and summary mode
+- Minimal default permissions: `activeTab`, `scripting`, and `storage`
+- Local proxy host permissions for testing
+- Optional HTTPS proxy permissions requested only when the user saves a hosted endpoint
+- No hardcoded API keys
+- Message validation and graceful error handling
+- Safe popup rendering with `textContent`
+- Safe in-page highlighting with DOM ranges and `<mark>` elements
 
 ## Folder Structure
 
+The repository root is the Chrome Extension folder that you load in Chrome.
+
 ```text
-ai-page-summarizer-extension/
+.
 ├── manifest.json
+├── package.json
 ├── README.md
 ├── popup/
 │   ├── popup.html
@@ -32,53 +37,109 @@ ai-page-summarizer-extension/
 ├── content/
 │   └── content-script.js
 ├── utils/
+│   ├── constants.js
 │   ├── extractor.js
 │   ├── sanitizer.js
-│   ├── storage.js
-│   └── constants.js
+│   └── storage.js
 ├── assets/
-    ├── icon16.png
-    ├── icon48.png
-    └── icon128.png
+│   ├── icon16.png
+│   ├── icon48.png
+│   └── icon128.png
 └── proxy/
     └── mock-server.js
 ```
 
-## Local Installation
+## Does It Need the Terminal Open?
 
-1. Open Chrome.
-2. Go to `chrome://extensions`.
-3. Enable Developer Mode.
-4. Click `Load unpacked`.
-5. Select the `ai-page-summarizer-extension` project folder.
-6. Pin the extension and open an article page.
-7. Click the extension icon and choose `Summarize Page`.
+For the bundled local mock proxy, yes. The extension calls `http://localhost:8787/api/summarize`, so a server process must be running on your machine.
 
-## Configure the AI API Proxy
+To use the extension without keeping a terminal open, use one of these approaches:
 
-The extension uses the safer proxy approach. It does not hardcode or expose any AI API key in popup code, content scripts, or committed files.
+- Deploy a real AI proxy to a hosted HTTPS service such as Cloudflare Workers, Render, Railway, Vercel, Netlify Functions, or your own backend.
+- Run the proxy as an operating-system background service.
+- Use a process manager such as PM2 to keep the proxy running.
 
-Default endpoint:
+The recommended production-like approach is a hosted HTTPS proxy. The extension should not call OpenAI, Gemini, or another AI provider directly with an API key stored in extension code.
 
-```text
-http://localhost:8787/api/summarize
+## Is `proxy/mock-server.js` Necessary?
+
+It is not required for production. It is included only so reviewers and teammates can test the extension flow without an AI key.
+
+Keep it for local development and grading demos. Replace it with a real server-side AI proxy when you want real AI summaries.
+
+## Local Test Without an AI Key
+
+This test uses the included mock proxy. It creates extractive summaries from the webpage text and proves that extraction, messaging, popup rendering, caching, and highlighting work.
+
+1. Install Node.js if it is not already installed.
+2. Open a terminal in this project folder.
+3. Start the mock proxy:
+
+```powershell
+npm run start:proxy
 ```
 
-## Quick Local Test Without an AI Key
-
-Use the included mock proxy first. It returns extractive JSON summaries, so you can verify the Chrome Extension flow before connecting OpenAI, Gemini, or another provider.
-
-From this project folder, run:
+You can also run:
 
 ```powershell
 node proxy/mock-server.js
 ```
 
-Keep that terminal open. Then load the extension from `chrome://extensions`, open a normal article page, and click `Summarize Page`.
+1. Keep that terminal open.
+2. Confirm the proxy is alive by opening:
 
-The mock proxy is only for local testing. For a real AI summary, replace it with your own server-side proxy that keeps provider API keys on the server.
+```text
+http://localhost:8787/health
+```
 
-The background service worker sends a `POST` request with this shape:
+You should see JSON with `"ok": true`.
+
+## Install the Extension Locally
+
+1. Open Chrome.
+2. Go to `chrome://extensions`.
+3. Enable `Developer mode`.
+4. Click `Load unpacked`.
+5. Select this repository folder, the folder that contains `manifest.json`.
+6. Pin the extension from the Chrome toolbar.
+7. Open a normal article page, blog post, documentation page, or essay.
+8. Click the extension icon.
+9. Confirm the page title appears.
+10. Click `Summarize Page`.
+
+Do not test on `chrome://` pages, the new tab page, extension pages, or the Chrome Web Store. Chrome blocks content scripts on those pages.
+
+## Use a Hosted AI Proxy
+
+To avoid keeping a local terminal open, deploy your AI proxy to an HTTPS URL.
+
+Your proxy must accept `POST` requests and keep provider API keys on the server. Example endpoint:
+
+```text
+https://your-domain.example/api/summarize
+```
+
+Then:
+
+1. Open the extension popup.
+2. Expand `API settings`.
+3. Paste your hosted proxy URL.
+4. Click `Save endpoint`.
+5. Approve Chrome's permission prompt for that proxy origin.
+6. Summarize an article page.
+
+The extension has default host permissions for:
+
+```text
+http://localhost:8787/*
+http://127.0.0.1:8787/*
+```
+
+For hosted proxies, it uses optional HTTPS host permissions and asks only for the exact origin you save.
+
+## Proxy Request Format
+
+The background service worker sends this JSON shape:
 
 ```json
 {
@@ -97,7 +158,7 @@ The background service worker sends a `POST` request with this shape:
 }
 ```
 
-Your proxy should call your chosen AI provider server-side and return either strict JSON:
+Your proxy should return strict JSON:
 
 ```json
 {
@@ -116,73 +177,101 @@ Your proxy should call your chosen AI provider server-side and return either str
 }
 ```
 
-or an OpenAI-style response whose message content contains that JSON. If the proxy returns plain text, the extension will split it into reasonable bullets as a fallback.
+The extension can also handle OpenAI-style responses where the assistant message contains that JSON. If the response is plain text, the extension attempts to split it into bullets as a fallback.
 
-If you use a remote proxy instead of localhost, update `host_permissions` in `manifest.json` to include the proxy origin, then reload the extension.
+## How Someone Else Can Download and Use It
+
+1. Go to the GitHub repository.
+2. Click `Code`.
+3. Choose `Download ZIP`, or run:
+
+```powershell
+git clone <repository-url>
+```
+
+1. If downloaded as ZIP, extract it.
+2. Open a terminal in the extracted project folder.
+3. For local testing, run:
+
+```powershell
+npm run start:proxy
+```
+
+1. Open Chrome and go to `chrome://extensions`.
+2. Enable `Developer mode`.
+3. Click `Load unpacked`.
+4. Select the folder that contains `manifest.json`.
+5. Open a real article page.
+6. Click the extension icon and summarize the page.
+
+For real AI results, the user needs a hosted AI proxy URL or their own local proxy that calls OpenAI, Gemini, or another provider server-side.
 
 ## Architecture
 
-- `popup/popup.js` owns the user workflow, UI state, active tab lookup, cache checks, script injection, and rendering.
-- `content/content-script.js` listens for extraction and highlighting messages. It never sends the full DOM.
-- `utils/extractor.js` chooses high-signal content containers, strips noisy elements, and returns text plus metadata.
-- `background/service-worker.js` validates messages, checks cache again, calls the configured AI proxy, parses JSON or plain text, and writes cache entries.
-- `utils/storage.js` wraps `chrome.storage.local` for settings, cached summaries, and the last summary.
-- `utils/sanitizer.js` centralizes text cleanup, URL normalization, word counts, and cache key creation.
+- `popup/popup.js` owns UI state, active tab lookup, cache checks, content-script injection, endpoint saving, optional proxy permission requests, and rendering.
+- `content/content-script.js` extracts readable page content and performs optional safe highlighting.
+- `utils/extractor.js` scores likely article containers, removes noisy page areas, and returns title, URL, text, word count, and reading time.
+- `background/service-worker.js` validates messages, checks cache again, calls the configured proxy, normalizes AI responses, and writes cache entries.
+- `utils/storage.js` wraps `chrome.storage.local`.
+- `utils/sanitizer.js` centralizes text cleanup, URL normalization, word counting, and safe list handling.
+- `proxy/mock-server.js` is a local testing proxy only.
 
 ## Content Extraction
 
-The extractor scores likely content containers such as `article`, `main`, `[role="main"]`, `.entry-content`, `.post-content`, and similar selectors. It removes scripts, styles, navbars, sidebars, footers, forms, cookie banners, comments, ads, social widgets, and newsletter areas. It then collects meaningful headings, paragraphs, list items, and blockquotes.
+The extractor prefers `article`, `main`, `[role="main"]`, `.entry-content`, `.post-content`, `.article-content`, and similar high-signal containers. It removes scripts, styles, navbars, sidebars, footers, forms, cookie banners, comments, ads, social widgets, newsletter blocks, and other common clutter.
 
-If no clear article container exists, it falls back to the body after applying the same filtering rules. Very long extracted content is capped before being sent to the proxy, while word count and reading time are computed from the extracted readable text.
+If no strong article container exists, it falls back to the body after applying filtering. Very long extracted text is capped before sending it to the proxy.
 
 ## Security Decisions
 
-- No API keys are stored in source code.
-- AI calls happen only in `background/service-worker.js`.
-- The default design expects a local proxy server to hold API secrets.
-- The popup and content script never receive API keys.
-- Dynamic popup text is rendered with `textContent`, not `innerHTML`.
-- Highlighting uses DOM `Range` and `<mark>` nodes, not HTML string injection.
-- Runtime messages are validated by type and payload before use.
-- Permissions are intentionally narrow. `activeTab` and `scripting` allow user-initiated extraction without permanent access to every site.
-- The only host permission is the default local proxy origin: `http://localhost:8787/*`.
-
-For local experiments only, you could modify the background worker to read a user-saved API key from `chrome.storage.local`, but that is not recommended for production. A server-side proxy is safer.
+- No API keys are committed to the repo.
+- AI calls happen from the background service worker to a proxy.
+- The popup and content script never receive provider API keys.
+- Hosted proxy endpoints must use HTTPS.
+- Local HTTP is only supported for `localhost` and `127.0.0.1` testing.
+- Popup output uses `textContent`, not `innerHTML`.
+- In-page highlights use DOM nodes and sanitized text, not HTML string injection.
+- Runtime message types and payloads are validated.
+- Default permissions are minimal.
+- Hosted proxy access is requested as an optional host permission only when needed.
 
 ## Caching
 
-Summaries are stored in `chrome.storage.local` under a normalized URL plus summary mode. URL hashes and common tracking parameters are removed before cache lookup. Cache entries expire after 7 days and the cache is pruned to 40 entries.
+Summaries are cached in `chrome.storage.local` by normalized URL and summary mode. URL hashes and common tracking parameters are removed before cache lookup. Cache entries expire after 7 days and are pruned to 40 entries.
 
-The popup checks cache before extracting and calling the proxy. The service worker also checks cache before making the AI request, which prevents duplicate calls if messages are repeated.
-
-Use `Clear Page Cache` to remove cached summaries for the current URL.
+Use `Clear Page Cache` to remove summaries for the current URL.
 
 ## Highlighting Trade-Offs
 
-The AI summary may paraphrase the article, so exact phrase matches are not always available. The content script first tries exact phrase matching, then safely highlights short page sentences that share multiple meaningful keywords with the summary or key insights. This avoids breaking the page layout, but it may highlight fewer sections on heavily paraphrased summaries.
+AI summaries may paraphrase the original article. The content script first tries exact phrase matching, then highlights short page sentences that share meaningful keywords with the summary or insights. This is safe and layout-friendly, but it may highlight fewer sections when the summary is heavily paraphrased.
 
 ## Troubleshooting
 
-- Opening `popup/popup.html` directly only previews the layout. Chrome APIs such as `chrome.tabs`, `chrome.scripting`, and `chrome.storage` only work after loading the folder as an unpacked extension.
-- If the popup says the proxy could not be reached, run `node proxy/mock-server.js` or start your real AI proxy at the endpoint saved in the popup.
-- `Chrome blocks extensions from reading this page`: Chrome does not allow content scripts on pages such as `chrome://`, the Chrome Web Store, internal extension pages, and some browser-owned surfaces.
-- `The AI proxy could not be reached`: Start your local proxy and confirm the popup endpoint matches it.
-- `AI proxy failed with HTTP ...`: Check your proxy logs and AI provider response.
-- `No readable article-style content was found`: Try a page with article-like text content. Search pages, dashboards, and media-only pages may not have enough readable text.
+- `The AI proxy could not be reached`: Start the local proxy with `npm run start:proxy`, or save a working hosted HTTPS proxy endpoint.
+- `Proxy permission was not granted`: Save the endpoint again and approve Chrome's permission prompt.
+- `Chrome blocks extensions from reading this page`: Test on a normal `http` or `https` article page.
+- `No readable article-style content was found`: Try a page with article-like text. Dashboards, search pages, and media-only pages may not have enough readable content.
 - Summary does not update: click `Clear Page Cache`, switch summary mode, or reload the extension from `chrome://extensions`.
-- Remote endpoint fails: update `host_permissions` in `manifest.json` for that exact origin and reload the extension.
+- Manifest changed but behavior did not: go to `chrome://extensions` and click the extension reload icon.
 
-## Testing on Article Pages
+## Verification
 
-1. Start the local test proxy with `node proxy/mock-server.js`.
-2. Open Chrome and go to `chrome://extensions`.
-3. Enable Developer Mode.
-4. Click `Load unpacked` and select this project folder.
-5. Open a news article, documentation page, blog post, or essay. Do not test on `chrome://`, the new tab page, or the Chrome Web Store.
-6. Open the extension popup and confirm the current page title appears.
-7. Click `Summarize Page`.
-8. Confirm summary bullets, key insights, word count, and reading time appear.
-9. Click `Copy` and paste into a text editor.
-10. Click `Highlight Key Points` and inspect the page.
-11. Click `Clear Highlights`.
-12. Close and reopen the popup on the same URL to confirm the cached summary appears without another API call.
+Run syntax checks:
+
+```powershell
+npm run check
+```
+
+Test the local proxy:
+
+```powershell
+npm run start:proxy
+```
+
+Then open:
+
+```text
+http://localhost:8787/health
+```
+
+Finally, load the unpacked extension and summarize a real article page.

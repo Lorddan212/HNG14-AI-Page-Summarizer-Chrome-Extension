@@ -111,6 +111,15 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === "GET" && (request.url === "/" || request.url === "/api/summarize" || request.url === "/health")) {
+    sendJson(response, 200, {
+      ok: true,
+      message: "Mock AI proxy is running. The Chrome Extension should POST to /api/summarize.",
+      endpoint: `http://localhost:${PORT}/api/summarize`
+    });
+    return;
+  }
+
   if (request.url !== "/api/summarize" || request.method !== "POST") {
     sendJson(response, 404, { error: "Use POST /api/summarize." });
     return;

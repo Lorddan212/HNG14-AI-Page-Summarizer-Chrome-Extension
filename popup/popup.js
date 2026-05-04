@@ -174,6 +174,84 @@
     return sanitizer.isHttpUrl(url);
   }
 
+  function getEndpointUrl(endpoint) {
+    try {
+      return new URL(endpoint);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function isBundledLocalEndpoint(endpoint) {
+    const parsed = getEndpointUrl(endpoint);
+    if (!parsed) {
+      return false;
+    }
+
+    return parsed.protocol === "http:" &&
+      parsed.port === "8787" &&
+      (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1");
+  }
+
+  function isInsecureRemoteEndpoint(endpoint) {
+    const parsed = getEndpointUrl(endpoint);
+    if (!parsed) {
+      return true;
+    }
+
+    return parsed.protocol === "http:" && !isBundledLocalEndpoint(endpoint);
+  }
+
+  function getEndpointOriginPattern(endpoint) {
+    const parsed = getEndpointUrl(endpoint);
+    return parsed ? `${parsed.origin}/*` : "";
+  }
+
+  function ensureEndpointPermission(endpoint) {
+    if (isBundledLocalEndpoint(endpoint)) {
+      return Promise.resolve(true);
+    }
+
+    const origin = getEndpointOriginPattern(endpoint);
+    if (!origin) {
+      return Promise.reject(new Error("Use a valid proxy endpoint URL."));
+    }
+
+    if (!chrome.permissions?.contains || !chrome.permissions?.request) {
+      return Promise.reject(new Error("Chrome could not request permission for this proxy endpoint."));
+    }
+
+    return new Promise((resolve, reject) => {
+      chrome.permissions.contains({ origins: [origin] }, (hasPermission) => {
+        const containsError = chrome.runtime.lastError;
+        if (containsError) {
+          reject(new Error(containsError.message));
+          return;
+        }
+
+        if (hasPermission) {
+          resolve(true);
+          return;
+        }
+
+        chrome.permissions.request({ origins: [origin] }, (granted) => {
+          const requestError = chrome.runtime.lastError;
+          if (requestError) {
+            reject(new Error(requestError.message));
+            return;
+          }
+
+          if (!granted) {
+            reject(new Error("Proxy permission was not granted. The extension cannot call this endpoint."));
+            return;
+          }
+
+          resolve(true);
+        });
+      });
+    });
+  }
+
   function getActiveTab() {
     return new Promise((resolve, reject) => {
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -383,7 +461,7 @@
     }
 
     if (/Failed to fetch|NetworkError|ERR_FAILED/i.test(message)) {
-      return "The AI proxy could not be reached. Check that your proxy is running and the endpoint is saved.";
+      return "The AI proxy could not be reached. Run `node proxy/mock-server.js`, keep that terminal open, and confirm the popup endpoint is http://localhost:8787/api/summarize.";
     }
 
     return message || "Something went wrong while summarizing the page.";
@@ -501,6 +579,18 @@
 
     if (!sanitizer.isHttpUrl(endpoint)) {
       setError("Use a valid http or https endpoint.");
+      return;
+    }
+
+    if (isInsecureRemoteEndpoint(endpoint)) {
+      setError("Use HTTPS for hosted proxy endpoints. HTTP is only supported for the bundled localhost test proxy.");
+      return;
+    }
+
+    try {
+      await ensureEndpointPermission(endpoint);
+    } catch (error) {
+      setError(error.message || "Chrome could not grant access to that proxy endpoint.");
       return;
     }
 
