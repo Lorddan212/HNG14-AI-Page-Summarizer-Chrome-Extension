@@ -104,6 +104,25 @@ importScripts(
     return rawText;
   }
 
+  function getErrorDetail(data) {
+    if (typeof data === "string") {
+      return sanitizer.sanitizeText(data, 240);
+    }
+
+    if (data && typeof data === "object") {
+      const message = data.error || data.message || data.detail || data.details;
+      if (typeof message === "string") {
+        return sanitizer.sanitizeText(message, 240);
+      }
+
+      if (message && typeof message === "object") {
+        return sanitizer.sanitizeText(JSON.stringify(message), 240);
+      }
+    }
+
+    return "";
+  }
+
   async function requestAiSummary(endpoint, extraction, mode) {
     const prompt = buildPrompt(extraction, mode);
     const response = await fetchWithTimeout(endpoint, {
@@ -129,7 +148,7 @@ importScripts(
 
     const data = await safeReadResponse(response);
     if (!response.ok) {
-      const detail = typeof data === "string" ? sanitizer.sanitizeText(data, 180) : "";
+      const detail = getErrorDetail(data);
       throw new Error(`AI proxy failed with HTTP ${response.status}.${detail ? ` ${detail}` : ""}`);
     }
 

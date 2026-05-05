@@ -34,9 +34,14 @@ loadEnvFile();
 
 const PORT = Number(process.env.PORT || 8787);
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+const GEMINI_FALLBACK_MODELS = (process.env.GEMINI_FALLBACK_MODELS || "gemini-2.5-flash,gemini-2.0-flash,gemini-2.0-flash-lite")
+  .split(",")
+  .map((model) => model.trim())
+  .filter(Boolean);
 const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
 const RATE_LIMIT_MAX_REQUESTS = Number(process.env.RATE_LIMIT_MAX_REQUESTS || 60);
+const GEMINI_MAX_RETRIES = Number(process.env.GEMINI_MAX_RETRIES || 2);
 const MAX_BODY_BYTES = 1_500_000;
 const MAX_CONTENT_CHARS = 14000;
 const WORD_PATTERN = /[\p{L}\p{N}][\p{L}\p{N}'-]*/gu;
@@ -46,6 +51,44 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
   .filter(Boolean);
 
 const rateLimitBuckets = new Map();
+const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+
+class UpstreamError extends Error {
+  constructor(message, statusCode, options = {}) {
+    super(message);
+    this.name = "UpstreamError";
+    this.statusCode = statusCode;
+    this.retryable = options.retryable ?? RETRYABLE_STATUS_CODES.has(statusCode);
+    this.fatal = Boolean(options.fatal);
+  }
+}
+
+function isGeminiQuotaError(statusCode, bodyText) {
+  if (statusCode !== 429) {
+    return false;
+  }
+
+  const lowerBody = sanitizeText(bodyText, 1200).toLowerCase();
+  return lowerBody.includes("exceeded your current quota") ||
+    lowerBody.includes("quota") ||
+    lowerBody.includes("rate-limits");
+}
+
+function getGeminiErrorMessage(model, statusCode, bodyText) {
+  if (isGeminiQuotaError(statusCode, bodyText)) {
+    return `Gemini quota or rate limit reached for this API key while using ${model}. Check your Google AI Studio quota, wait a few minutes, or switch to the mock/OpenAI proxy.`;
+  }
+
+  if (statusCode === 401 || statusCode === 403) {
+    return "Gemini rejected the API key. Check GEMINI_API_KEY in your private .env file, then restart the proxy.";
+  }
+
+  if (statusCode === 503) {
+    return `Gemini model ${model} is temporarily unavailable. Try again shortly or use another Gemini model.`;
+  }
+
+  return `Gemini model ${model} failed with HTTP ${statusCode}: ${sanitizeText(bodyText, 220)}`;
+}
 
 function sanitizeText(value, maxLength = 1000) {
   const text = String(value || "")
@@ -74,6 +117,22 @@ function countWords(value) {
 
 function estimateReadingTime(wordCount) {
   return `${Math.max(1, Math.ceil(Number(wordCount || 0) / 220))} min read`;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getModelList() {
+  const seen = new Set();
+  return [GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS].filter((model) => {
+    if (!model || seen.has(model)) {
+      return false;
+    }
+
+    seen.add(model);
+    return true;
+  });
 }
 
 function getClientId(request) {
@@ -199,12 +258,12 @@ function buildPrompt(payload) {
   ].join("\n");
 }
 
-async function callGemini(payload) {
+async function callGeminiModel(payload, model) {
   if (!GEMINI_API_KEY) {
     throw new Error("GEMINI_API_KEY is not configured on the proxy server.");
   }
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent`;
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -233,14 +292,51 @@ async function callGemini(payload) {
   const text = await response.text();
 
   if (!response.ok) {
-    throw new Error(`Gemini request failed with HTTP ${response.status}: ${sanitizeText(text, 260)}`);
+    const quotaError = isGeminiQuotaError(response.status, text);
+    throw new UpstreamError(getGeminiErrorMessage(model, response.status, text), response.status, {
+      retryable: RETRYABLE_STATUS_CODES.has(response.status) && !quotaError,
+      fatal: quotaError || response.status === 401 || response.status === 403
+    });
   }
 
   try {
     return JSON.parse(text);
   } catch (error) {
-    throw new Error("Gemini returned a non-JSON response.");
+    throw new Error(`Gemini model ${model} returned a non-JSON response.`);
   }
+}
+
+async function callGemini(payload) {
+  const models = getModelList();
+  const errors = [];
+
+  for (const model of models) {
+    for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt += 1) {
+      try {
+        const data = await callGeminiModel(payload, model);
+        return {
+          data,
+          model
+        };
+      } catch (error) {
+        errors.push(error.message);
+
+        if (error.fatal) {
+          throw error;
+        }
+
+        if (!error.retryable || attempt === GEMINI_MAX_RETRIES) {
+          break;
+        }
+
+        const waitMs = 700 * 2 ** attempt;
+        console.warn(`Gemini model ${model} is temporarily unavailable. Retrying in ${waitMs}ms...`);
+        await sleep(waitMs);
+      }
+    }
+  }
+
+  throw new Error(`Gemini could not generate a summary after trying ${models.join(", ")}. Last errors: ${errors.slice(-3).join(" | ")}`);
 }
 
 function extractGeminiText(data) {
@@ -256,7 +352,23 @@ function extractGeminiText(data) {
     .trim();
 }
 
-function normalizeSummary(geminiData, payload) {
+function splitTextIntoBullets(text, maxItems) {
+  const lines = sanitizeMultiline(text, 3000)
+    .split(/\n+|(?:^|\s)(?:[-*]|[0-9]+[.)])\s+/)
+    .map((item) => sanitizeText(item, 320))
+    .filter((item) => countWords(item) >= 5);
+
+  if (lines.length > 1) {
+    return lines.slice(0, maxItems);
+  }
+
+  return (sanitizeText(text, 3000).match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [])
+    .map((item) => sanitizeText(item, 320))
+    .filter((item) => countWords(item) >= 5)
+    .slice(0, maxItems);
+}
+
+function normalizeSummary(geminiData, payload, model) {
   const text = extractGeminiText(geminiData);
   let result;
 
@@ -268,7 +380,22 @@ function normalizeSummary(geminiData, payload) {
     if (firstBrace >= 0 && lastBrace > firstBrace) {
       result = JSON.parse(text.slice(firstBrace, lastBrace + 1));
     } else {
-      throw new Error("Gemini response did not contain parseable summary JSON.");
+      const bullets = splitTextIntoBullets(text, payload.options.mode === "brief" ? 6 : 9);
+      const summary = bullets.slice(0, payload.options.mode === "brief" ? 3 : 6);
+      const keyInsights = bullets.slice(summary.length, summary.length + 3);
+
+      if (!summary.length) {
+        const finishReason = geminiData?.candidates?.[0]?.finishReason;
+        throw new Error(`Gemini response did not contain parseable summary JSON${finishReason ? ` (finish reason: ${finishReason})` : ""}.`);
+      }
+
+      return {
+        summary,
+        keyInsights: keyInsights.length ? keyInsights : summary.slice(0, 3),
+        readingTime: payload.page.readingTime,
+        wordCount: payload.page.wordCount,
+        model
+      };
     }
   }
 
@@ -287,7 +414,8 @@ function normalizeSummary(geminiData, payload) {
     summary,
     keyInsights: keyInsights.length ? keyInsights : summary.slice(0, 3),
     readingTime: sanitizeText(result.readingTime || payload.page.readingTime, 40),
-    wordCount: Number(result.wordCount || payload.page.wordCount)
+    wordCount: Number(result.wordCount || payload.page.wordCount),
+    model
   };
 }
 
@@ -303,8 +431,8 @@ async function handleSummarize(request, response) {
   const rawBody = await readBody(request);
   const requestPayload = JSON.parse(rawBody || "{}");
   const payload = validatePayload(requestPayload);
-  const geminiData = await callGemini(payload);
-  const summary = normalizeSummary(geminiData, payload);
+  const geminiResult = await callGemini(payload);
+  const summary = normalizeSummary(geminiResult.data, payload, geminiResult.model);
   sendJson(request, response, 200, summary);
 }
 
@@ -314,12 +442,15 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  if (request.method === "GET" && (request.url === "/" || request.url === "/health")) {
+  if (request.method === "GET" && (request.url === "/" || request.url === "/health" || request.url === "/api/summarize")) {
     sendJson(request, response, 200, {
       ok: true,
       provider: "gemini",
       model: GEMINI_MODEL,
-      hasApiKey: Boolean(GEMINI_API_KEY)
+      fallbackModels: getModelList().slice(1),
+      hasApiKey: Boolean(GEMINI_API_KEY),
+      endpoint: `http://localhost:${PORT}/api/summarize`,
+      usage: "Health checks use GET. Summaries require POST /api/summarize with extracted page content."
     });
     return;
   }
@@ -332,13 +463,29 @@ const server = http.createServer(async (request, response) => {
   try {
     await handleSummarize(request, response);
   } catch (error) {
-    sendJson(request, response, 500, {
+    console.error(`Gemini proxy error: ${sanitizeText(error.message || "Unknown error", 500)}`);
+    const statusCode = Number(error.statusCode) >= 400 && Number(error.statusCode) < 600
+      ? Number(error.statusCode)
+      : 500;
+    sendJson(request, response, statusCode, {
       error: sanitizeText(error.message || "The AI proxy failed.", 320)
     });
   }
 });
 
+server.on("error", (error) => {
+  if (error.code === "EADDRINUSE") {
+    console.error(`Port ${PORT} is already in use. Only one proxy can run on this port at a time.`);
+    console.error(`Open http://localhost:${PORT}/health to see what is already running, or stop the other process before starting this proxy.`);
+    process.exit(1);
+  }
+
+  throw error;
+});
+
 server.listen(PORT, () => {
   console.log(`Gemini proxy running at http://localhost:${PORT}/api/summarize`);
-  console.log("Set GEMINI_API_KEY in .env or the environment before requesting summaries.");
+  console.log(GEMINI_API_KEY
+    ? "Gemini API key loaded from .env or the environment."
+    : "Set GEMINI_API_KEY in .env or the environment before requesting summaries.");
 });

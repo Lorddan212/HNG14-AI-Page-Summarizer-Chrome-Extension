@@ -115,7 +115,8 @@ const server = http.createServer(async (request, response) => {
     sendJson(response, 200, {
       ok: true,
       message: "Mock AI proxy is running. The Chrome Extension should POST to /api/summarize.",
-      endpoint: `http://localhost:${PORT}/api/summarize`
+      endpoint: `http://localhost:${PORT}/api/summarize`,
+      usage: "Health checks use GET. Summaries require POST /api/summarize with extracted page content."
     });
     return;
   }
@@ -138,6 +139,16 @@ const server = http.createServer(async (request, response) => {
   } catch (error) {
     sendJson(response, 500, { error: sanitizeText(error.message, 220) });
   }
+});
+
+server.on("error", (error) => {
+  if (error.code === "EADDRINUSE") {
+    console.error(`Port ${PORT} is already in use. Only one proxy can run on this port at a time.`);
+    console.error(`Open http://localhost:${PORT}/health to see what is already running, or stop the other process before starting this proxy.`);
+    process.exit(1);
+  }
+
+  throw error;
 });
 
 server.listen(PORT, () => {

@@ -47,6 +47,14 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
 
 const rateLimitBuckets = new Map();
 
+class UpstreamError extends Error {
+  constructor(message, statusCode) {
+    super(message);
+    this.name = "UpstreamError";
+    this.statusCode = statusCode;
+  }
+}
+
 function sanitizeText(value, maxLength = 1000) {
   const text = String(value || "")
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
@@ -66,6 +74,24 @@ function sanitizeMultiline(value, maxLength = MAX_CONTENT_CHARS) {
     .join("\n\n");
 
   return text.length > maxLength ? text.slice(0, maxLength).trim() : text;
+}
+
+function getOpenAIErrorMessage(statusCode, bodyText) {
+  const lowerBody = sanitizeText(bodyText, 1200).toLowerCase();
+
+  if (statusCode === 429) {
+    if (lowerBody.includes("quota")) {
+      return "OpenAI quota was exceeded for this API key. Check your OpenAI billing/quota, wait if you are rate-limited, or switch to the mock/Gemini proxy.";
+    }
+
+    return "OpenAI rate limit was reached for this API key. Wait a few minutes, then try again.";
+  }
+
+  if (statusCode === 401 || statusCode === 403) {
+    return "OpenAI rejected the API key. Check OPENAI_API_KEY in your private .env file, then restart the proxy.";
+  }
+
+  return `OpenAI request failed with HTTP ${statusCode}: ${sanitizeText(bodyText, 220)}`;
 }
 
 function countWords(value) {
@@ -251,7 +277,7 @@ async function callOpenAI(payload) {
   const text = await response.text();
 
   if (!response.ok) {
-    throw new Error(`OpenAI request failed with HTTP ${response.status}: ${sanitizeText(text, 260)}`);
+    throw new UpstreamError(getOpenAIErrorMessage(response.status, text), response.status);
   }
 
   try {
@@ -331,12 +357,14 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  if (request.method === "GET" && (request.url === "/" || request.url === "/health")) {
+  if (request.method === "GET" && (request.url === "/" || request.url === "/health" || request.url === "/api/summarize")) {
     sendJson(request, response, 200, {
       ok: true,
       provider: "openai",
       model: OPENAI_MODEL,
-      hasApiKey: Boolean(OPENAI_API_KEY)
+      hasApiKey: Boolean(OPENAI_API_KEY),
+      endpoint: `http://localhost:${PORT}/api/summarize`,
+      usage: "Health checks use GET. Summaries require POST /api/summarize with extracted page content."
     });
     return;
   }
@@ -349,13 +377,29 @@ const server = http.createServer(async (request, response) => {
   try {
     await handleSummarize(request, response);
   } catch (error) {
-    sendJson(request, response, 500, {
+    console.error(`OpenAI proxy error: ${sanitizeText(error.message || "Unknown error", 500)}`);
+    const statusCode = Number(error.statusCode) >= 400 && Number(error.statusCode) < 600
+      ? Number(error.statusCode)
+      : 500;
+    sendJson(request, response, statusCode, {
       error: sanitizeText(error.message || "The AI proxy failed.", 320)
     });
   }
 });
 
+server.on("error", (error) => {
+  if (error.code === "EADDRINUSE") {
+    console.error(`Port ${PORT} is already in use. Only one proxy can run on this port at a time.`);
+    console.error(`Open http://localhost:${PORT}/health to see what is already running, or stop the other process before starting this proxy.`);
+    process.exit(1);
+  }
+
+  throw error;
+});
+
 server.listen(PORT, () => {
   console.log(`OpenAI proxy running at http://localhost:${PORT}/api/summarize`);
-  console.log("Set OPENAI_API_KEY in the environment before requesting summaries.");
+  console.log(OPENAI_API_KEY
+    ? "OpenAI API key loaded from .env or the environment."
+    : "Set OPENAI_API_KEY in .env or the environment before requesting summaries.");
 });

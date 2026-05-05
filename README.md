@@ -32,7 +32,8 @@ Add your own provider key to `.env`. Use a fresh key from your own AI provider a
 
 ```text
 GEMINI_API_KEY=your_gemini_key_here
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-2.5-flash-lite
+GEMINI_FALLBACK_MODELS=gemini-2.5-flash,gemini-2.0-flash,gemini-2.0-flash-lite
 
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4.1-mini
@@ -44,11 +45,32 @@ Do not commit `.env`. It is ignored by git.
 
 ### 3. Run real Gemini summaries
 
-Start the Gemini proxy:
+Open a terminal inside the project folder, the same folder that contains `package.json`, then start the Gemini proxy:
 
 ```powershell
 npm run start:gemini-proxy
 ```
+
+If Windows PowerShell blocks `npm` with `npm.ps1 cannot be loaded because running scripts is disabled`, use the npm command shim instead:
+
+```powershell
+npm.cmd run start:gemini-proxy
+```
+
+You can also use Git Bash or Command Prompt from the project folder.
+
+Available proxy commands:
+
+```powershell
+npm run dev                 # starts the OpenAI proxy
+npm run dev:openai          # starts the OpenAI proxy
+npm run dev:gemini          # starts the Gemini proxy
+npm run dev:mock            # starts the mock proxy without an AI key
+npm run start:openai-proxy  # same as dev:openai
+npm run start:gemini-proxy  # same as dev:gemini
+```
+
+Run only one proxy at a time. They all use port `8787` by default. If you see `EADDRINUSE`, another proxy is already running on that port. Open `http://localhost:8787/health` to check it, or stop the existing process before starting another provider.
 
 Then open:
 
@@ -57,6 +79,16 @@ http://localhost:8787/health
 ```
 
 Confirm `"provider": "gemini"` and `"hasApiKey": true`.
+
+If the health response shows `"model": "gemini-2.5-flash"` but you want the lighter default, change your private `.env` to:
+
+```text
+GEMINI_MODEL=gemini-2.5-flash-lite
+```
+
+Then stop and restart the proxy. Gemini errors such as HTTP `429` mean the API key has hit quota or rate limits; HTTP `503` means the selected model is temporarily unavailable. Those are provider-side limits, not Chrome extension install failures.
+
+Opening `http://localhost:8787/api/summarize` directly in a browser is only a health-style check. Real summaries use `POST /api/summarize`, which the Chrome extension sends automatically after extracting page content.
 
 In the popup, keep the proxy endpoint as:
 
