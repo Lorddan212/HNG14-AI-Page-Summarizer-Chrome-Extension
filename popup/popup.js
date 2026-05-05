@@ -6,7 +6,7 @@
   const sanitizer = namespace.Sanitizer;
   const storage = namespace.Storage;
   const MESSAGE_TYPES = constants.MESSAGE_TYPES;
-  const SUMMARY_MODES = constants.SUMMARY_MODES;
+  const SUMMARY_BULLET_COUNTS = constants.SUMMARY_BULLET_COUNTS;
 
   const CONTENT_SCRIPT_FILES = [
     "utils/constants.js",
@@ -63,6 +63,7 @@
     [
       els.themeToggle,
       els.summarizeBtn,
+      els.bulletCountSelect,
       els.endpointInput,
       els.saveEndpointBtn,
       els.copyBtn,
@@ -74,10 +75,6 @@
         control.disabled = true;
       }
     });
-
-    document.querySelectorAll("input[name='summaryMode']").forEach((input) => {
-      input.disabled = true;
-    });
   }
 
   function cacheElements() {
@@ -87,6 +84,7 @@
       "pageTitle",
       "pageUrl",
       "summarizeBtn",
+      "bulletCountSelect",
       "endpointInput",
       "saveEndpointBtn",
       "alertBox",
@@ -113,24 +111,60 @@
     els.clearBtn.addEventListener("click", clearCurrentCache);
     els.saveEndpointBtn.addEventListener("click", saveEndpoint);
     els.themeToggle.addEventListener("click", toggleTheme);
+    els.bulletCountSelect.addEventListener("change", handleBulletCountChange);
+  }
 
-    document.querySelectorAll("input[name='summaryMode']").forEach((input) => {
-      input.addEventListener("change", async () => {
-        const mode = getSelectedMode();
-        state.settings = await storage.saveSettings({ summaryMode: mode });
-        await showCachedSummaryForCurrentMode();
-      });
-    });
+  async function handleBulletCountChange() {
+    if (state.isLoading) {
+      return;
+    }
+
+    const bulletCount = getSelectedBulletCount();
+    state.settings = await storage.saveSettings({ summaryBulletCount: bulletCount });
+
+    if (state.tab?.url && isSupportedPage(state.tab.url)) {
+      const cached = await storage.getCachedSummary(state.tab.url, bulletCount);
+      if (cached?.result) {
+        renderResult(cached.result, { cached: true });
+        setStatus("Showing cached summary");
+        return;
+      }
+    }
+
+    if (state.currentResult?.summary?.length >= bulletCount) {
+      const derivedResult = {
+        ...state.currentResult,
+        summary: state.currentResult.summary.slice(0, bulletCount)
+      };
+
+      renderResult(derivedResult);
+      if (state.tab?.url && isSupportedPage(state.tab.url)) {
+        await storage.setCachedSummary(state.tab.url, bulletCount, derivedResult, {
+          title: state.tab.title || "",
+          wordCount: derivedResult.wordCount
+        });
+      }
+      setStatus(`Showing ${bulletCount}-bullet summary`);
+      return;
+    }
+
+    if (state.currentResult || state.currentExtraction) {
+      await summarizeCurrentPage();
+      return;
+    }
+
+    if (state.tab?.url && isSupportedPage(state.tab.url)) {
+      await summarizeCurrentPage();
+      return;
+    }
+
+    await showCachedSummaryForCurrentMode();
   }
 
   async function loadSettings() {
     state.settings = await storage.getSettings();
     els.endpointInput.value = state.settings.apiEndpoint || constants.DEFAULT_SETTINGS.apiEndpoint;
-
-    const modeInput = document.querySelector(`input[name='summaryMode'][value='${state.settings.summaryMode}']`);
-    if (modeInput) {
-      modeInput.checked = true;
-    }
+    els.bulletCountSelect.value = String(getStoredBulletCount(state.settings));
   }
 
   async function loadActiveTab() {
@@ -155,7 +189,7 @@
       return;
     }
 
-    const cached = await storage.getCachedSummary(state.tab.url, getSelectedMode());
+    const cached = await storage.getCachedSummary(state.tab.url, getSelectedBulletCount());
     if (cached?.result) {
       renderResult(cached.result, { cached: true });
       setStatus("Showing cached summary");
@@ -166,8 +200,27 @@
     setStatus("Ready");
   }
 
-  function getSelectedMode() {
-    return document.querySelector("input[name='summaryMode']:checked")?.value || SUMMARY_MODES.STANDARD;
+  function getStoredBulletCount(settings) {
+    if (settings?.summaryMode === "brief") {
+      return 3;
+    }
+
+    if (settings?.summaryMode === "standard") {
+      return 5;
+    }
+
+    return normalizeBulletCount(settings?.summaryBulletCount);
+  }
+
+  function normalizeBulletCount(value) {
+    const count = Number(value);
+    return SUMMARY_BULLET_COUNTS.includes(count)
+      ? count
+      : constants.DEFAULT_SETTINGS.summaryBulletCount;
+  }
+
+  function getSelectedBulletCount() {
+    return normalizeBulletCount(els.bulletCountSelect?.value);
   }
 
   function isSupportedPage(url) {
@@ -340,8 +393,8 @@
     setLoading(true);
 
     try {
-      const mode = getSelectedMode();
-      const cached = await storage.getCachedSummary(state.tab.url, mode);
+      const bulletCount = getSelectedBulletCount();
+      const cached = await storage.getCachedSummary(state.tab.url, bulletCount);
       if (cached?.result) {
         renderResult(cached.result, { cached: true });
         setStatus("Showing cached summary");
@@ -362,7 +415,7 @@
         type: MESSAGE_TYPES.SUMMARIZE_PAGE,
         payload: {
           extraction: state.currentExtraction,
-          summaryMode: mode
+          summaryBulletCount: bulletCount
         }
       });
 
@@ -399,8 +452,9 @@
   }
 
   function normalizeResultForDisplay(result) {
+    const bulletCount = getSelectedBulletCount();
     return {
-      summary: sanitizer.uniqueList(result?.summary || [], 6, 320),
+      summary: sanitizer.uniqueList(result?.summary || [], bulletCount, 320),
       keyInsights: sanitizer.uniqueList(result?.keyInsights || [], 3, 320),
       readingTime: sanitizer.sanitizeText(result?.readingTime || "-", 40),
       wordCount: Number(result?.wordCount || 0)
@@ -420,6 +474,8 @@
   function resetResultView() {
     state.currentResult = null;
     els.resultsPanel.hidden = true;
+    els.readingTime.textContent = "-";
+    els.wordCount.textContent = "-";
     els.summaryList.replaceChildren();
     els.insightsList.replaceChildren();
     els.copyBtn.disabled = true;
@@ -432,6 +488,7 @@
     state.isLoading = isLoading;
     els.loadingBox.hidden = !isLoading;
     els.summarizeBtn.disabled = isLoading || !isSupportedPage(state.tab?.url);
+    els.bulletCountSelect.disabled = isLoading;
     els.saveEndpointBtn.disabled = isLoading;
   }
 
@@ -569,6 +626,7 @@
 
     await storage.clearCachedSummary(state.tab.url);
     await storage.clearLastSummary();
+    state.currentExtraction = null;
     resetResultView();
     setStatus("Page cache cleared");
   }

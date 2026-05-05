@@ -112,15 +112,186 @@ http://localhost:8787/health
 
 You should see JSON with `"ok": true`.
 
-### 5. Use on another PC
+### 5. How to get, load, and run my extension on your PC
 
-1. Download or clone the repository on the other PC.
-2. Install Node.js.
-3. Create a private `.env` file from `.env.example`.
-4. Add that user's own `GEMINI_API_KEY` or `OPENAI_API_KEY`.
-5. Run `npm run start:gemini-proxy` for Gemini, or `npm run start:openai-proxy` for OpenAI.
-6. Load the project folder in Chrome using `chrome://extensions` > `Load unpacked`.
-7. Open an article page and click `Summarize Page`.
+This is a local Chrome Extension, so you will load it manually in Chrome and run one local proxy server. You can use the mock server, Gemini server, or OpenAI server. If you use Gemini or OpenAI, use your own API key. Do not use or share my `.env` file.
+
+#### Step 1: Install what you need
+
+Install:
+
+- Google Chrome
+- Node.js from `https://nodejs.org`
+- VS Code, if you want to run it from the VS Code terminal
+- Git, if you want to clone the repository instead of downloading a ZIP
+
+After installing Node.js, open PowerShell and check:
+
+```powershell
+node -v
+```
+
+You should see a Node version number.
+
+#### Step 2: Get the project
+
+You can get the project in either of these ways.
+
+Option A: Download ZIP
+
+1. Open my GitHub repository.
+2. Click `Code`.
+3. Click `Download ZIP`.
+4. Unzip the folder.
+5. Make sure the folder contains `manifest.json`.
+
+Option B: Clone with Git
+
+```powershell
+cd "$env:USERPROFILE\Desktop"
+git clone https://github.com/your-username/ai-page-summarizer-extension.git
+cd ".\ai-page-summarizer-extension"
+```
+
+Replace the GitHub URL above with the repository link I shared with you.
+
+#### Step 3: Open the project in VS Code or PowerShell
+
+Using VS Code:
+
+1. Open VS Code.
+2. Click `File` > `Open Folder`.
+3. Select the project folder that contains `manifest.json`.
+4. Click `Terminal` > `New Terminal`.
+
+Using PowerShell:
+
+```powershell
+cd "C:\path\to\ai-page-summarizer-extension"
+```
+
+Replace the path with the real folder path on your PC.
+
+#### Step 4: Create your private `.env` file
+
+Run this from the project folder:
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
+```
+
+If you want Gemini, add your Gemini key:
+
+```text
+GEMINI_API_KEY=your_gemini_key_here
+GEMINI_MODEL=gemini-2.5-flash-lite
+```
+
+If you want OpenAI, add your OpenAI key:
+
+```text
+OPENAI_API_KEY=your_openai_key_here
+OPENAI_MODEL=gpt-4.1-mini
+```
+
+Save the `.env` file. Do not commit or share it.
+
+#### Step 5: Choose one server to run
+
+Run only one server at a time because they all use port `8787`.
+
+Mock server, no API key needed:
+
+```powershell
+npm.cmd run start:proxy
+```
+
+Gemini server:
+
+```powershell
+npm.cmd run start:gemini-proxy
+```
+
+OpenAI server:
+
+```powershell
+npm.cmd run start:openai-proxy
+```
+
+Keep that VS Code terminal or PowerShell window open while using the extension.
+
+If `npm` works normally on your PC, you can use `npm run ...`. If PowerShell blocks `npm.ps1`, use `npm.cmd run ...` exactly as shown above.
+
+#### Step 6: Check the server health result
+
+Open this URL in Chrome:
+
+```text
+http://localhost:8787/health
+```
+
+If you started the mock server, the expected result should look like this:
+
+```json
+{
+  "ok": true,
+  "message": "Mock AI proxy is running. The Chrome Extension should POST to /api/summarize.",
+  "endpoint": "http://localhost:8787/api/summarize",
+  "usage": "Health checks use GET. Summaries require POST /api/summarize with extracted page content."
+}
+```
+
+If you started the Gemini server, the expected result should look like this:
+
+```json
+{
+  "ok": true,
+  "provider": "gemini",
+  "model": "gemini-2.5-flash-lite",
+  "fallbackModels": [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite"
+  ],
+  "hasApiKey": true,
+  "endpoint": "http://localhost:8787/api/summarize",
+  "usage": "Health checks use GET. Summaries require POST /api/summarize with extracted page content."
+}
+```
+
+If you started the OpenAI server, the expected result should look like this:
+
+```json
+{
+  "ok": true,
+  "provider": "openai",
+  "model": "gpt-4.1-mini",
+  "hasApiKey": true,
+  "endpoint": "http://localhost:8787/api/summarize",
+  "usage": "Health checks use GET. Summaries require POST /api/summarize with extracted page content."
+}
+```
+
+If `"hasApiKey"` is `false`, your `.env` file is missing the key or the server was not restarted after editing `.env`.
+
+#### Step 7: Load the extension in Chrome
+
+1. Open Chrome.
+2. Go to `chrome://extensions`.
+3. Turn on `Developer mode`.
+4. Click `Load unpacked`.
+5. Select the project folder that contains `manifest.json`.
+6. Pin the extension from the Chrome toolbar.
+
+#### Step 8: Test the extension
+
+1. Open a normal article page or blog post.
+2. Do not test on `chrome://` pages, the Chrome Web Store, or the new tab page.
+3. Click the extension icon.
+4. Click `Summarize Page`.
+5. If you used the mock server, you should see a test summary.
+6. If you used Gemini or OpenAI, you should see an AI-generated summary, key insights, reading time, and word count.
 
 For production-style use without keeping a terminal open, deploy `proxy/gemini-server.js`, `proxy/openai-server.js`, or an equivalent backend to an HTTPS host and save that hosted endpoint in the popup.
 
@@ -186,7 +357,7 @@ The proxy receives:
     "readingTime": "4 min read"
   },
   "options": {
-    "mode": "standard",
+    "bulletCount": 5,
     "responseFormat": "json"
   }
 }

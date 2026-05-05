@@ -5,6 +5,7 @@ const http = require("node:http");
 const PORT = Number(process.env.PORT || 8787);
 const MAX_BODY_BYTES = 1_500_000;
 const WORD_PATTERN = /[\p{L}\p{N}][\p{L}\p{N}'-]*/gu;
+const SUMMARY_BULLET_COUNTS = Object.freeze([3, 5, 7]);
 
 function sanitizeText(value, maxLength = 1000) {
   const text = String(value || "")
@@ -21,6 +22,19 @@ function countWords(value) {
 
 function estimateReadingTime(wordCount) {
   return `${Math.max(1, Math.ceil(Number(wordCount || 0) / 220))} min read`;
+}
+
+function normalizeBulletCount(value, fallbackMode) {
+  if (fallbackMode === "brief") {
+    return 3;
+  }
+
+  if (fallbackMode === "standard") {
+    return 5;
+  }
+
+  const count = Number(value);
+  return SUMMARY_BULLET_COUNTS.includes(count) ? count : 5;
 }
 
 function readBody(request) {
@@ -85,8 +99,7 @@ function scoreSentence(sentence, index) {
 
 function summarize(payload) {
   const content = sanitizeText(payload.content, 120000);
-  const mode = payload.options?.mode === "brief" ? "brief" : "standard";
-  const maxSummaryItems = mode === "brief" ? 3 : 5;
+  const maxSummaryItems = normalizeBulletCount(payload.options?.bulletCount, payload.options?.mode);
   const wordCount = Number(payload.page?.wordCount || countWords(content));
   const sentences = getSentences(content);
   const rankedSentences = sentences
@@ -97,8 +110,18 @@ function summarize(payload) {
   const summary = rankedSentences.slice(0, maxSummaryItems);
   const keyInsights = rankedSentences.slice(maxSummaryItems, maxSummaryItems + 3);
 
+  if (!summary.length) {
+    for (let index = 1; index <= maxSummaryItems; index += 1) {
+      summary.push(`Mock summary bullet ${index}: the proxy received page content but could not extract enough sentence-like text.`);
+    }
+  }
+
+  while (summary.length > 0 && summary.length < maxSummaryItems) {
+    summary.push(`This mock summary item confirms the page content was extracted and requested as a ${maxSummaryItems}-bullet summary.`);
+  }
+
   return {
-    summary: summary.length ? summary : ["The mock proxy received content, but it could not extract enough sentence-like text."],
+    summary,
     keyInsights: keyInsights.length ? keyInsights : summary.slice(0, 3),
     readingTime: payload.page?.readingTime || estimateReadingTime(wordCount),
     wordCount

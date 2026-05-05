@@ -46,6 +46,7 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
   .filter(Boolean);
 
 const rateLimitBuckets = new Map();
+const SUMMARY_BULLET_COUNTS = Object.freeze([3, 5, 7]);
 
 class UpstreamError extends Error {
   constructor(message, statusCode) {
@@ -100,6 +101,19 @@ function countWords(value) {
 
 function estimateReadingTime(wordCount) {
   return `${Math.max(1, Math.ceil(Number(wordCount || 0) / 220))} min read`;
+}
+
+function normalizeBulletCount(value, fallbackMode) {
+  if (fallbackMode === "brief") {
+    return 3;
+  }
+
+  if (fallbackMode === "standard") {
+    return 5;
+  }
+
+  const count = Number(value);
+  return SUMMARY_BULLET_COUNTS.includes(count) ? count : 5;
 }
 
 function getClientId(request) {
@@ -200,16 +214,14 @@ function validatePayload(payload) {
       readingTime: sanitizeText(page.readingTime || estimateReadingTime(wordCount), 40)
     },
     options: {
-      mode: options.mode === "brief" ? "brief" : "standard"
+      bulletCount: normalizeBulletCount(options.bulletCount, options.mode)
     }
   };
 }
 
 function buildInput(payload) {
-  const summaryCount = payload.options.mode === "brief" ? "exactly 3" : "4 to 6";
-
   return [
-    `Summarize this webpage in ${summaryCount} concise bullet points.`,
+    `Summarize this webpage in exactly ${payload.options.bulletCount} concise bullet points.`,
     "Also provide exactly 3 key insights.",
     "Use only the supplied page content.",
     "",
@@ -223,7 +235,7 @@ function buildInput(payload) {
   ].join("\n");
 }
 
-function getSummarySchema() {
+function getSummarySchema(bulletCount) {
   return {
     type: "object",
     additionalProperties: false,
@@ -231,8 +243,8 @@ function getSummarySchema() {
     properties: {
       summary: {
         type: "array",
-        minItems: 1,
-        maxItems: 6,
+        minItems: bulletCount,
+        maxItems: bulletCount,
         items: { type: "string" }
       },
       keyInsights: {
@@ -268,7 +280,7 @@ async function callOpenAI(payload) {
           type: "json_schema",
           name: "page_summary",
           strict: true,
-          schema: getSummarySchema()
+          schema: getSummarySchema(payload.options.bulletCount)
         }
       }
     })
@@ -316,7 +328,7 @@ function normalizeSummary(openAiData, payload) {
   }
 
   const summary = Array.isArray(result.summary)
-    ? result.summary.map((item) => sanitizeText(item, 320)).filter(Boolean).slice(0, 6)
+    ? result.summary.map((item) => sanitizeText(item, 320)).filter(Boolean).slice(0, payload.options.bulletCount)
     : [];
   const keyInsights = Array.isArray(result.keyInsights)
     ? result.keyInsights.map((item) => sanitizeText(item, 320)).filter(Boolean).slice(0, 3)

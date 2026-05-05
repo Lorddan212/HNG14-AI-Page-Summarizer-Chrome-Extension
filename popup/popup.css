@@ -48,6 +48,10 @@ html {
   background: var(--bg);
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   display: flex;
   justify-content: center;
@@ -63,7 +67,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -78,6 +83,7 @@ button:disabled {
 
 button:focus-visible,
 input:focus-visible,
+select:focus-visible,
 summary:focus-visible {
   outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
@@ -190,52 +196,31 @@ h1 {
 }
 
 .control-panel {
+  align-items: flex-end;
   gap: 10px;
 }
 
-.mode-switch {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+.length-control {
   flex: 1;
-  margin: 0;
-  padding: 3px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-strong);
-}
-
-.mode-switch label {
-  position: relative;
   min-width: 0;
 }
 
-.mode-switch input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-}
-
-.mode-switch span {
+.compact-label {
   display: block;
-  border-radius: 6px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 750;
-  line-height: 1;
-  padding: 9px 8px;
-  text-align: center;
-  transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
+  margin-bottom: 5px;
 }
 
-.mode-switch input:checked + span {
-  background: var(--surface);
+.select-input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-strong);
   color: var(--text);
-  box-shadow: 0 8px 32px rgba(26, 27, 34, 0.06);
-}
-
-.mode-switch input:focus-visible + span {
-  outline: 3px solid var(--focus-ring);
-  outline-offset: 1px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.1;
+  padding: 8px 10px;
 }
 
 .primary-button,

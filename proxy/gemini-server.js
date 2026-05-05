@@ -52,6 +52,7 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
 
 const rateLimitBuckets = new Map();
 const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+const SUMMARY_BULLET_COUNTS = Object.freeze([3, 5, 7]);
 
 class UpstreamError extends Error {
   constructor(message, statusCode, options = {}) {
@@ -117,6 +118,19 @@ function countWords(value) {
 
 function estimateReadingTime(wordCount) {
   return `${Math.max(1, Math.ceil(Number(wordCount || 0) / 220))} min read`;
+}
+
+function normalizeBulletCount(value, fallbackMode) {
+  if (fallbackMode === "brief") {
+    return 3;
+  }
+
+  if (fallbackMode === "standard") {
+    return 5;
+  }
+
+  const count = Number(value);
+  return SUMMARY_BULLET_COUNTS.includes(count) ? count : 5;
 }
 
 function sleep(ms) {
@@ -233,16 +247,14 @@ function validatePayload(payload) {
       readingTime: sanitizeText(page.readingTime || estimateReadingTime(wordCount), 40)
     },
     options: {
-      mode: options.mode === "brief" ? "brief" : "standard"
+      bulletCount: normalizeBulletCount(options.bulletCount, options.mode)
     }
   };
 }
 
 function buildPrompt(payload) {
-  const summaryCount = payload.options.mode === "brief" ? "exactly 3" : "4 to 6";
-
   return [
-    `Summarize this webpage in ${summaryCount} concise bullet points.`,
+    `Summarize this webpage in exactly ${payload.options.bulletCount} concise bullet points.`,
     "Also provide exactly 3 key insights.",
     "Return JSON only with this shape:",
     "{\"summary\":[\"bullet point\"],\"keyInsights\":[\"insight\"],\"readingTime\":\"4 min read\",\"wordCount\":850}",
@@ -380,8 +392,8 @@ function normalizeSummary(geminiData, payload, model) {
     if (firstBrace >= 0 && lastBrace > firstBrace) {
       result = JSON.parse(text.slice(firstBrace, lastBrace + 1));
     } else {
-      const bullets = splitTextIntoBullets(text, payload.options.mode === "brief" ? 6 : 9);
-      const summary = bullets.slice(0, payload.options.mode === "brief" ? 3 : 6);
+      const bullets = splitTextIntoBullets(text, payload.options.bulletCount + 3);
+      const summary = bullets.slice(0, payload.options.bulletCount);
       const keyInsights = bullets.slice(summary.length, summary.length + 3);
 
       if (!summary.length) {
@@ -400,7 +412,7 @@ function normalizeSummary(geminiData, payload, model) {
   }
 
   const summary = Array.isArray(result.summary)
-    ? result.summary.map((item) => sanitizeText(item, 320)).filter(Boolean).slice(0, 6)
+    ? result.summary.map((item) => sanitizeText(item, 320)).filter(Boolean).slice(0, payload.options.bulletCount)
     : [];
   const keyInsights = Array.isArray(result.keyInsights)
     ? result.keyInsights.map((item) => sanitizeText(item, 320)).filter(Boolean).slice(0, 3)

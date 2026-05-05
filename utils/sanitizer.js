@@ -87,8 +87,8 @@
 
   function makeCacheKey(url, mode) {
     const constants = namespace.Constants || {};
-    const summaryModes = constants.SUMMARY_MODES || {};
-    const selectedMode = mode || summaryModes.STANDARD || "standard";
+    const defaultSettings = constants.DEFAULT_SETTINGS || {};
+    const selectedMode = mode || defaultSettings.summaryBulletCount || 5;
     return `${normalizeUrlForCache(url)}::${selectedMode}`;
   }
 

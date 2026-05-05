@@ -12,7 +12,7 @@ importScripts(
   const sanitizer = namespace.Sanitizer;
   const storage = namespace.Storage;
   const MESSAGE_TYPES = constants.MESSAGE_TYPES;
-  const SUMMARY_MODES = constants.SUMMARY_MODES;
+  const SUMMARY_BULLET_COUNTS = constants.SUMMARY_BULLET_COUNTS;
 
   function responseOk(payload) {
     return { ok: true, ...payload };
@@ -51,19 +51,26 @@ importScripts(
     };
   }
 
-  function normalizeSummaryMode(mode) {
-    return Object.values(SUMMARY_MODES).includes(mode) ? mode : SUMMARY_MODES.STANDARD;
+  function normalizeBulletCount(value, fallbackMode) {
+    if (fallbackMode === "brief") {
+      return 3;
+    }
+
+    if (fallbackMode === "standard") {
+      return 5;
+    }
+
+    const count = Number(value);
+    return SUMMARY_BULLET_COUNTS.includes(count)
+      ? count
+      : constants.DEFAULT_SETTINGS.summaryBulletCount;
   }
 
-  function buildPrompt(extraction, mode) {
-    const bulletInstruction = mode === SUMMARY_MODES.BRIEF
-      ? "Write exactly 3 concise summary bullet points."
-      : "Write 4 to 6 concise summary bullet points.";
-
+  function buildPrompt(extraction, bulletCount) {
     return [
       "You are an AI page summarizer for a Chrome Extension.",
       "Use only the page content provided by the user.",
-      bulletInstruction,
+      `Write exactly ${bulletCount} concise summary bullet points.`,
       "Also return 3 key insights.",
       "Return strict JSON only, with no markdown fences or commentary.",
       "The JSON shape must be:",
@@ -123,8 +130,8 @@ importScripts(
     return "";
   }
 
-  async function requestAiSummary(endpoint, extraction, mode) {
-    const prompt = buildPrompt(extraction, mode);
+  async function requestAiSummary(endpoint, extraction, bulletCount) {
+    const prompt = buildPrompt(extraction, bulletCount);
     const response = await fetchWithTimeout(endpoint, {
       method: "POST",
       headers: {
@@ -140,7 +147,7 @@ importScripts(
           readingTime: extraction.readingTime
         },
         options: {
-          mode,
+          bulletCount,
           responseFormat: "json"
         }
       })
@@ -220,8 +227,8 @@ importScripts(
     return [];
   }
 
-  function normalizeAiResult(rawResult, extraction, mode) {
-    const maxSummaryItems = mode === SUMMARY_MODES.BRIEF ? 3 : 6;
+  function normalizeAiResult(rawResult, extraction, bulletCount) {
+    const maxSummaryItems = normalizeBulletCount(bulletCount);
     let result = rawResult;
     let plainText = "";
 
@@ -276,8 +283,8 @@ importScripts(
 
   async function handleSummarizeMessage(payload) {
     const extraction = validatePageContent(payload?.extraction);
-    const mode = normalizeSummaryMode(payload?.summaryMode);
-    const cached = await storage.getCachedSummary(extraction.url, mode);
+    const bulletCount = normalizeBulletCount(payload?.summaryBulletCount, payload?.summaryMode);
+    const cached = await storage.getCachedSummary(extraction.url, bulletCount);
 
     if (cached?.result) {
       return responseOk({
@@ -295,7 +302,7 @@ importScripts(
 
     let aiResponse;
     try {
-      aiResponse = await requestAiSummary(endpoint, extraction, mode);
+      aiResponse = await requestAiSummary(endpoint, extraction, bulletCount);
     } catch (error) {
       if (error.name === "AbortError") {
         throw new Error("The AI proxy timed out. Try again or increase the proxy reliability.");
@@ -304,8 +311,8 @@ importScripts(
       throw error;
     }
 
-    const result = normalizeAiResult(aiResponse, extraction, mode);
-    const entry = await storage.setCachedSummary(extraction.url, mode, result, {
+    const result = normalizeAiResult(aiResponse, extraction, bulletCount);
+    const entry = await storage.setCachedSummary(extraction.url, bulletCount, result, {
       title: extraction.title,
       wordCount: extraction.wordCount
     });
@@ -313,7 +320,7 @@ importScripts(
     await storage.setLastSummary({
       url: extraction.url,
       title: extraction.title,
-      mode,
+      bulletCount,
       result
     });
 

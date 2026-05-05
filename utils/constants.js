@@ -17,14 +17,11 @@
     LAST_SUMMARY: "aiPageSummarizer.lastSummary.v1"
   });
 
-  const SUMMARY_MODES = Object.freeze({
-    STANDARD: "standard",
-    BRIEF: "brief"
-  });
+  const SUMMARY_BULLET_COUNTS = Object.freeze([3, 5, 7]);
 
   const DEFAULT_SETTINGS = Object.freeze({
     apiEndpoint: "http://localhost:8787/api/summarize",
-    summaryMode: SUMMARY_MODES.STANDARD,
+    summaryBulletCount: 5,
     theme: "light"
   });
 
@@ -42,7 +39,7 @@
     HIGHLIGHT_STYLE_ID: "ai-page-summarizer-highlight-style",
     MESSAGE_TYPES,
     STORAGE_KEYS,
-    SUMMARY_MODES,
+    SUMMARY_BULLET_COUNTS,
     DEFAULT_SETTINGS
   });
 

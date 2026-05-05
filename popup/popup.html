@@ -22,23 +22,20 @@
       </header>
 
       <section class="page-panel" aria-labelledby="pageTitleLabel">
-        <p id="pageTitleLabel" class="section-label">Current page</p>
-        <h2 id="pageTitle" class="page-title">Loading page...</h2>
+        <p id="pageTitleLabel" class="section-label">Current Page</p>
+        <h2 id="pageTitle" class="page-title">Loading Page...</h2>
         <p id="pageUrl" class="page-url"></p>
       </section>
 
       <section class="control-panel" aria-label="Summary controls">
-        <fieldset class="mode-switch">
-          <legend class="sr-only">Summary length</legend>
-          <label>
-            <input type="radio" name="summaryMode" value="standard" checked>
-            <span>Detailed</span>
-          </label>
-          <label>
-            <input type="radio" name="summaryMode" value="brief">
-            <span>3 bullets</span>
-          </label>
-        </fieldset>
+        <div class="length-control">
+          <label class="field-label compact-label" for="bulletCountSelect">Summary Length</label>
+          <select id="bulletCountSelect" class="select-input" aria-label="Summary length">
+            <option value="3">3 Bullets Summary</option>
+            <option value="5" selected>5 Bullets Summary</option>
+            <option value="7">7 Bullets Summary</option>
+          </select>
+        </div>
 
         <button id="summarizeBtn" class="primary-button" type="button">
           Summarize Page
@@ -46,10 +43,10 @@
       </section>
 
       <details class="settings-panel">
-        <summary>API settings</summary>
+        <summary>API Settings</summary>
         <label class="field-label" for="endpointInput">Proxy endpoint</label>
         <input id="endpointInput" class="text-input" type="url" spellcheck="false" autocomplete="off">
-        <button id="saveEndpointBtn" class="ghost-button full-width" type="button">Save endpoint</button>
+        <button id="saveEndpointBtn" class="ghost-button full-width" type="button">Save Endpoint</button>
       </details>
 
       <div id="alertBox" class="alert" role="alert" hidden></div>
@@ -62,11 +59,11 @@
       <section id="resultsPanel" class="results-panel" aria-label="Summary result" hidden>
         <div class="meta-grid">
           <div>
-            <span class="meta-label">Reading time</span>
+            <span class="meta-label">Reading Time</span>
             <strong id="readingTime">-</strong>
           </div>
           <div>
-            <span class="meta-label">Word count</span>
+            <span class="meta-label">Word Count</span>
             <strong id="wordCount">-</strong>
           </div>
         </div>
@@ -77,15 +74,15 @@
         </section>
 
         <section class="result-card" aria-labelledby="insightsHeading">
-          <h3 id="insightsHeading">Key insights</h3>
+          <h3 id="insightsHeading">Key Insights</h3>
           <ul id="insightsList" class="result-list insight-list"></ul>
         </section>
 
         <div class="action-grid">
-          <button id="copyBtn" class="ghost-button" type="button">Copy</button>
-          <button id="highlightBtn" class="ghost-button" type="button">Highlight Key Points</button>
-          <button id="clearHighlightsBtn" class="ghost-button" type="button">Clear Highlights</button>
-          <button id="clearBtn" class="danger-button" type="button">Clear Page Cache</button>
+          <button id="copyBtn" class="ghost-button" type="button" title="Copy the summary and key insights to the clipboard">Copy</button>
+          <button id="highlightBtn" class="ghost-button" type="button" title="Highlight matching key points on the current page">Highlight Key Points</button>
+          <button id="clearHighlightsBtn" class="ghost-button" type="button" title="Remove extension highlights from the current page">Clear Highlights</button>
+          <button id="clearBtn" class="danger-button" type="button" title="Clear this page's cached summary and reset the result panel">Clear Page Cache</button>
         </div>
       </section>
     </main>
